@@ -266,7 +266,7 @@ def create_clash_royale_visualizations(deck_data: pd.DataFrame, output_dir: str 
 # === EXAMPLE USAGE ===
 if __name__ == "__main__":
 
-    deck_data = pd.read_csv("clan_based_deckss.csv")
+    deck_data = pd.read_csv("../clan_based_deckss.csv")
 
 
     import ast
@@ -275,7 +275,7 @@ if __name__ == "__main__":
         deck_data['cards'] = deck_data['cards'].apply(ast.literal_eval)
 
     # Create visualizations
-    viz_paths = create_clash_royale_visualizations(deck_data, output_dir="./visualizations")
+    viz_paths = create_clash_royale_visualizations(deck_data, output_dir="visualizations")
 
     print("\n Done! Check the visualizations folder for all charts.")
 
