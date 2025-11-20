@@ -266,7 +266,7 @@ def create_clash_royale_visualizations(deck_data: pd.DataFrame, output_dir: str 
 # === EXAMPLE USAGE ===
 if __name__ == "__main__":
 
-    deck_data = pd.read_csv("../clan_based_deckss.csv")
+    deck_data = pd.read_csv("../model_1/clan_based_deckss.csv")
 
 
     import ast
