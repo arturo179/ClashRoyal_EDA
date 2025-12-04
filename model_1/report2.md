@@ -4,14 +4,22 @@ By Arturo Renteria
 
 Abstract:
 
-The purpose behind this to see if a machine laerning model can reliably classify Clash Royale play regions
+The purpose behind this to see if a machine learning model can reliably classify Clash Royale play regions
 based on the composition of decks. This was done by analyzing a curated dataset from the Clash Royale Api.
 
 The most effective model was the random forest model as it was able to find the hidden non-linear relationships between the players and stats of the cards
 
 The dataset consisted of Player metadata, Clan information, Region labels, The eight cards used + their stats on the max level of the cards.
 
-
+This led me to label the different regions into 6 separate categories known as 
+`"WinCondition": ["Hog Rider", "Miner", "Graveyard", "Balloon", "Giant", "Royal Giant", "Goblin Barrel", "X-Bow", "Mortar"],
+    "Beatdown": ["Golem", "Lava Hound", "Giant", "Electro Giant"],
+    "Cycle": ["Skeletons", "Ice Spirit", "Fire Spirit", "Ice Golem"],
+    "Air": ["Baby Dragon", "Lava Hound", "Minions", "Mega Minion", "Balloon"],
+    "Control": ["Poison", "Tornado", "Bomb Tower", "Barbarian Barrel"],
+    "BridgeSpam": ["Bandit", "Battle Ram", "Prince", "Dark Prince"],
+    "SpellBait": ["Goblin Barrel", "Princess", "Rocket", "Inferno Tower"]`
+This results from the common cards used from the decks of the top players of that region and the most common strategy always involved a win condition. 
 `Conclusion`
 Overal the best model was the random forest trained on an updated dataset that took in the information of the cards. Though as the data grew the recall and precision drastically went down as more regions were added to it. 
 
