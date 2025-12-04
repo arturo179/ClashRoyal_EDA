@@ -12,12 +12,12 @@ import os
 
 
 load_dotenv()
-API_KEY = os.getenv("API_TOKEN")
 
 
 
 class ClanBasedStrategyClassifier:
     def __init__(self, api_key: str):
+        self.cards_id_to_name = None
         self.api_key = api_key
         self.headers = {
             "Authorization": f"Bearer {api_key}",
@@ -26,6 +26,9 @@ class ClanBasedStrategyClassifier:
         self.base_url = "https://api.clashroyale.com/v1"
         self.cards_df = None
         self.locations_df = None
+        self.cards_id_to_name = {}
+        self.card_stats_by_id= {}
+
 
     def fetch_cards(self):
         """Fetch all cards data"""
@@ -34,6 +37,7 @@ class ClanBasedStrategyClassifier:
         resp.raise_for_status()
         cards = resp.json().get("items", [])
         self.cards_df = pl.DataFrame(cards)
+        self.cards_id_to_name ={card["id"]: card["name"] for card in cards}
         print(f"Fetched {len(cards)} cards")
         return self.cards_df
 
@@ -88,6 +92,37 @@ class ClanBasedStrategyClassifier:
         resp.raise_for_status()
 
         return resp.json()
+    def load_external_card_stats(self, csv_path: str):
+        """Load External Card Stats"""
+        stats_df = pd.read_csv(csv_path)
+
+        stats_df["name_clean"] = stats_df["name"].str.strip().str.lower()
+
+        stats_by_name = {
+            row["name_clean"]: row
+            for _, row in stats_df.iterrows()
+        }
+        self.card_stats_by_id = {}
+        for cid, name in self.cards_id_to_name.items():
+            key = name.strip().lower()
+            if key in stats_by_name:
+                row = stats_by_name[key]
+
+                self.card_stats_by_id[cid] = {
+                    "name": name,
+                    "elixir": row.get("elixir"),
+                    "hitpoints": row.get("hitpoints14"),
+                    "damage": row.get("damage14")
+                }
+            else:
+                self.card_stats_by_id[cid] = {
+                    "name": name,
+                    "elixir": None,
+                    "hitpoints": None,
+                    "damage": None
+
+                }
+        print(f"Loaded extra stats for {len(self.card_stats_by_id)} cards")
 
     def collect_clan_deck_data(self, location_ids: List[int],
                                clans_per_location: int = 10,
@@ -141,7 +176,14 @@ class ClanBasedStrategyClassifier:
                                 current_deck = player_details.get("currentDeck", [])
 
                                 if current_deck:
-                                    card_ids = [card.get("id") or card.get("name") for card in current_deck]
+                                    card_ids = []
+                                    card_names = []
+
+                                    for card in current_deck:
+                                        cid = card.get("id")
+                                        cname = self.cards_id_to_name.get(cid, "Unknown")
+                                        card_ids.append(cid)
+                                        card_names.append(cname)
 
                                     deck_data.append({
                                         "player_tag": player_tag.replace("#", ""),
@@ -151,6 +193,7 @@ class ClanBasedStrategyClassifier:
                                         "location_id": loc_id,
                                         "location_name": location_name,
                                         "cards": card_ids,
+                                        "card_names": card_names,
                                         "trophies": player_details.get("trophies", 0),
                                         "clan_score": clan_score
                                     })
@@ -208,7 +251,7 @@ class ClanBasedStrategyClassifier:
 
             # Flatten all cards from this region
             all_cards = []
-            for cards in location_data['cards']:
+            for cards in location_data['card_names']:
                 all_cards.extend(cards)
 
             card_freq = Counter(all_cards)
@@ -226,7 +269,7 @@ class ClanBasedStrategyClassifier:
 
             # Get most common cards in this clan
             all_cards = []
-            for cards in clan_data['cards']:
+            for cards in clan_data['card_names']:
                 all_cards.extend(cards)
 
             card_freq = Counter(all_cards)
@@ -245,7 +288,7 @@ class ClanBasedStrategyClassifier:
 
         for _, row in deck_data.iterrows():
             location = row['location_name']
-            for card in row['cards']:
+            for card in row['card_names']:
                 if card not in card_location_freq:
                     card_location_freq[card] = {}
                 if location not in card_location_freq[card]:
@@ -273,10 +316,25 @@ class ClanBasedStrategyClassifier:
             print(f"\n    {card} (variance: {variance:.2f}):")
             for loc in deck_data['location_name'].unique():
                 loc_data = deck_data[deck_data['location_name'] == loc]
-                card_count = sum(1 for cards in loc_data['cards'] if card in cards)
+                card_count = sum(1 for cards in loc_data['card_names'] if card in cards)
                 pct = (card_count / len(loc_data)) * 100 if len(loc_data) > 0 else 0
                 print(f"      {loc}: {pct:.1f}%")
 
+    def compute_deck_stats(self,card_ids):
+        """Compute statistics about the decks"""
+
+        stats = [self.card_stats_by_id.get(cid) for cid in card_ids if cid in self.card_stats_by_id]
+        hp_vals = [s["hitpoints"] for s in stats if s and s["hitpoints"] is not None]
+        dmg_vals = [s["damage"] for s in stats if s and s["damage"] is not None]
+        elixir_vals = [s["elixir"] for s in stats if s and s["elixir"] is not None]
+
+        return{
+            "avg_hp": float(np.mean(hp_vals)) if hp_vals else np.nan,
+            "avg_damage": float(np.mean(dmg_vals)) if dmg_vals else np.nan,
+            "avg_elixir": float(np.mean(elixir_vals)) if elixir_vals else np.nan,
+            "total_hp": float(np.sum(hp_vals)) if hp_vals else np.nan,
+            "total_damage": float(np.sum(dmg_vals)) if dmg_vals else np.nan,
+        }
 
 def main():
 
@@ -290,6 +348,7 @@ def main():
 
     cards_df = classifier.fetch_cards()
     locations_df = classifier.fetch_locations()
+    classifier.load_external_card_stats("cardsInfo.csv")
 
     # Show available locations
     print("\nAvailable locations:")
@@ -300,7 +359,15 @@ def main():
     target_locations = [
         57000000,  #Example: adjust based on your findings
         57000001,
-        57000002
+        57000002,
+        57000003,
+        57000004,
+        57000005,
+        57000006,
+        57000007,
+        57000008,
+        57000009,
+        57000010,
     ]
 
     print(f"\n{'=' * 60}")
@@ -314,19 +381,24 @@ def main():
         members_per_clan=10,  # 10 members per clan
         delay_between_requests=0.2  # Rate limiting
     )
+    deck_stats = deck_data["cards"].apply(classifier.compute_deck_stats)
+    deck_stats_df = pd.DataFrame(list(deck_stats))
+    deck_data_with_stats = pd.concat([deck_data.reset_index(drop=True),
+                                      deck_stats_df.reset_index(drop=True)], axis = 1)
 
-    if len(deck_data) > 0:
+
+    if len(deck_data_with_stats) > 0:
         print("\n Data collection successful!")
-        print(f"Collected {len(deck_data)} decks")
-        print(f"From {deck_data['clan_name'].nunique()} clans")
-        print(f"Across {deck_data['location_name'].nunique()} regions")
+        print(f"Collected {len(deck_data_with_stats)} decks")
+        print(f"From {deck_data_with_stats['clan_name'].nunique()} clans")
+        print(f"Across {deck_data_with_stats['location_name'].nunique()} regions")
 
         # Save raw data
-        deck_data.to_csv("clan_based_deckss.csv", index=False)
-        print("\n Saved to: clan_based_deckss.csv")
+        deck_data_with_stats.to_csv("clan_based_decks2.csv", index=False)
+        print("\n Saved to: clan_based_decks2.csv")
 
         # Analyze strategies
-        classifier.analyze_clan_strategies(deck_data)
+        classifier.analyze_clan_strategies(deck_data_with_stats)
 
         # Now you can build your classifier
         print("\n" + "=" * 60)
@@ -340,4 +412,5 @@ def main():
         print(" No data collected!")
         return None
 
-
+if __name__ == "__main__":
+    main()
